@@ -18,15 +18,15 @@ class CometManager:
         self.spawned = False
         self.is_faint = False
 
-    def update(self, dt: float, progress: float, moon_phase: float):
+    def update(self, dt: float, progress: float, moon_phase: float, can_spawn: bool = True, is_lunar_eclipse: bool = False):
         """彗星の出現と移動を更新する"""
-        # 新月・上弦の半月・上弦の月で発生
-        if moon_phase in (0.0, 0.5, 0.75):
-            if not self.spawned and progress >= 0.3:
+        # 新月・上弦の半月・上弦の月・月食で発生
+        if moon_phase in (0.0, 0.5, 0.75) or is_lunar_eclipse:
+            if can_spawn and not self.spawned and progress >= 0.3:
                 self.spawned = True
                 self.active = True
                 self.timer = 7.0
-                self.is_faint = (moon_phase > 0.0)
+                self.is_faint = (moon_phase > 0.0) and not is_lunar_eclipse
                 
                 # ドーム座標での開始・終了地点を設定
                 self.start_theta = random.uniform(0, 360)

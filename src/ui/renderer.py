@@ -64,6 +64,8 @@ def draw_background(screen, coord, ready_state=False, difficulty="FULL_MOON", vi
         screen.fill((1, 2, 4)) # 夜空の背景色を極めて暗く
     elif difficulty == "NEW_MOON" and not view_mode:
         screen.fill((2, 3, 6)) # 新月（EXPERT）用の極限の闇夜
+    elif difficulty == "LUNAR_ECLIPSE" and not view_mode:
+        screen.fill((18, 2, 4)) # レッドムーン用の赤みがかった闇夜
     elif view_mode:
         screen.fill((20, 30, 50)) # 鑑賞モード用の少し明るい綺麗な紺色
     else:
@@ -371,7 +373,7 @@ def draw_title_screen(screen, elapsed_time):
     gy = SCREEN_H * 2 // 3
     screen.blit(guidance_text, (gx, gy))
 
-def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
+def draw_moon(screen, coord, theta, phi, phase, ready_state=False, is_lunar_eclipse=False):
     """月の描画（半透明グロー付きの美しい月 - 満ち欠け対応・ズーム対応）"""
     sx, sy, visible = coord.to_screen(theta, phi)
     if not visible:
@@ -386,11 +388,14 @@ def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
     glow_center = r * 4
     
     # グローの色と不透明度
-    if ready_state:
-        glow_color = (255, 245, 180)
-        glow_alphas = [4, 10, 20]
+    if is_lunar_eclipse:
+        glow_color = (255, 80, 80)
     else:
         glow_color = (255, 245, 180)
+
+    if ready_state:
+        glow_alphas = [4, 10, 20]
+    else:
         glow_alphas = [20, 50, 90]
         
     pygame.draw.circle(glow_surf, (glow_color[0], glow_color[1], glow_color[2], glow_alphas[0]), (glow_center, glow_center), int(90 * zoom_ratio))
@@ -399,7 +404,10 @@ def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
     screen.blit(glow_surf, (int(sx) - glow_center, int(sy) - glow_center))
     
     # 月のコアの描画 (満ち欠け対応)
-    moon_color = (70, 68, 60) if ready_state else (255, 253, 225)
+    if is_lunar_eclipse:
+        moon_color = (130, 30, 30) if ready_state else (200, 60, 60)
+    else:
+        moon_color = (70, 68, 60) if ready_state else (255, 253, 225)
     shadow_color = (5, 10, 20)  # 夜空の背景色
 
     # 新月
@@ -407,11 +415,15 @@ def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
         pygame.draw.circle(screen, (40, 50, 70), (int(sx), int(sy)), r)
         pygame.draw.circle(screen, shadow_color, (int(sx), int(sy)), max(1, r - int(2 * zoom_ratio)))
     elif phase == 1.0:
-        # 満月
+        # 満月 / 月食
         pygame.draw.circle(screen, moon_color, (int(sx), int(sy)), r)
         # クレーター
-        pygame.draw.circle(screen, (245, 235, 195) if not ready_state else (60, 56, 48), (int(sx) - int(6 * zoom_ratio), int(sy) - int(4 * zoom_ratio)), int(6 * zoom_ratio))
-        pygame.draw.circle(screen, (245, 235, 195) if not ready_state else (60, 56, 48), (int(sx) + int(8 * zoom_ratio), int(sy) + int(6 * zoom_ratio)), int(4 * zoom_ratio))
+        if is_lunar_eclipse:
+            crater_color = (130, 30, 30) if not ready_state else (60, 20, 20)
+        else:
+            crater_color = (245, 235, 195) if not ready_state else (60, 56, 48)
+        pygame.draw.circle(screen, crater_color, (int(sx) - int(6 * zoom_ratio), int(sy) - int(4 * zoom_ratio)), int(6 * zoom_ratio))
+        pygame.draw.circle(screen, crater_color, (int(sx) + int(8 * zoom_ratio), int(sy) + int(6 * zoom_ratio)), int(4 * zoom_ratio))
     elif phase == 0.5:
         # 上弦の月 (右半分が光る)
         surf = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
@@ -520,8 +532,17 @@ def draw_clear_screen(screen, game):
         desc_text1 = font_medium.render("彗星がトリガーとなり、夜空のバグが生まれない星空へと再構成されました", True, (220, 235, 255))
         guidance_text = font_small.render("[ PRESS ENTER TO RETURN TO TITLE ]", True, (255, 255, 255))
         
+        # TRUE CLEAR 用の統計テキスト
+        stat_tc1 = font_medium.render(f"倒したバグの総数: {game.defeated_bugs_count} 個", True, (220, 235, 255))
+        stat_tc2 = font_medium.render(f"直した星座の総数: {game.repaired_consts_session_count} 個", True, (220, 235, 255))
+        stat_tc3 = font_medium.render(f"能力を発動させた総数: {getattr(game, 'activated_abilities_count', 0)} 回", True, (220, 235, 255))
+        
+        panel.blit(stat_tc1, (panel_w // 2 - stat_tc1.get_width() // 2, 175))
+        panel.blit(stat_tc2, (panel_w // 2 - stat_tc2.get_width() // 2, 215))
+        panel.blit(stat_tc3, (panel_w // 2 - stat_tc3.get_width() // 2, 255))
+
         # 星空を見るボタン
-        btn_rect = pygame.Rect(panel_w // 2 - 100, 250, 200, 40)
+        btn_rect = pygame.Rect(panel_w // 2 - 100, 310, 200, 40)
         btn_color = (60, 100, 150)
         mx, my = pygame.mouse.get_pos()
         btn_rect_global = pygame.Rect(sw // 2 - panel_w // 2 + btn_rect.x, sh // 2 - panel_h // 2 + btn_rect.y, btn_rect.width, btn_rect.height)
@@ -615,7 +636,7 @@ def draw_game_over_screen(screen, game):
     # 画面中央に blit
     screen.blit(panel, (sw // 2 - panel_w // 2, sh // 2 - panel_h // 2))
 
-def draw_moon_icon(screen, cx, cy, r, phase, is_selected):
+def draw_moon_icon(screen, cx, cy, r, phase, is_selected, is_lunar_eclipse=False):
     """月の満ち欠けアイコンを描画する (phase: 0.0=新月, 0.5=上弦, -0.5=下弦, 1.0=満月, 0.75=十三夜, -0.75=凸月)"""
     # 選択されている場合のグロー効果
     if is_selected:
@@ -626,19 +647,26 @@ def draw_moon_icon(screen, cx, cy, r, phase, is_selected):
             pygame.draw.circle(glow_surf, (255, 235, 150, alpha), (r * 2, r * 2), r + i * 2)
         screen.blit(glow_surf, (cx - r * 2, cy - r * 2))
 
-    # 月の基本円 (黄色/クリーム色)
-    moon_color = (255, 253, 220)
+    # 月の基本円
+    if is_lunar_eclipse:
+        moon_color = (200, 60, 60)
+    else:
+        moon_color = (255, 253, 220)
 
     # 新月 (phase = 0.0) の場合は、地球照のように極めて薄い青グレーで輪郭を描く
     if phase == 0.0:
         pygame.draw.circle(screen, (40, 50, 70), (cx, cy), r)
         pygame.draw.circle(screen, (10, 15, 25), (cx, cy), r - 2)
     elif phase == 1.0:
-        # 満月
+        # 満月 / 月食
         pygame.draw.circle(screen, moon_color, (cx, cy), r)
         # クレーターのうっすらとしたディテール
-        pygame.draw.circle(screen, (245, 235, 195), (cx - r//4, cy - r//6), r//4)
-        pygame.draw.circle(screen, (245, 235, 195), (cx + r//3, cy + r//4), r//6)
+        if is_lunar_eclipse:
+            crater_color = (130, 20, 20)
+        else:
+            crater_color = (245, 235, 195)
+        pygame.draw.circle(screen, crater_color, (cx - r//4, cy - r//6), r//4)
+        pygame.draw.circle(screen, crater_color, (cx + r//3, cy + r//4), r//6)
     elif phase == 0.5:
         # 上弦の月 (右半分が光る)
         surf = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
@@ -694,7 +722,7 @@ def draw_moon_icon(screen, cx, cy, r, phase, is_selected):
     if is_selected:
         pygame.draw.circle(screen, (255, 220, 100), (cx, cy), r + 2, 2)
 
-def draw_stage_intro_screen(screen, elapsed_time, difficulty_name, phase):
+def draw_stage_intro_screen(screen, elapsed_time, difficulty_name, phase, is_lunar_eclipse=False):
     """ステージ開始前の月齢表示画面を描画"""
     sw = screen.get_width()
     sh = screen.get_height()
@@ -709,10 +737,10 @@ def draw_stage_intro_screen(screen, elapsed_time, difficulty_name, phase):
     cx, cy = sw // 2, sh // 2 - 40
     
     # 大きな月を描画
-    draw_moon_icon(screen, cx, cy, 150, phase, False)
+    draw_moon_icon(screen, cx, cy, 150, phase, False, is_lunar_eclipse)
     
     # 月齢の名前を描画
-    title_text = font_large.render(difficulty_name, True, (255, 235, 150))
+    title_text = font_large.render(difficulty_name, True, (255, 60, 60) if is_lunar_eclipse else (255, 235, 150))
     screen.blit(title_text, (cx - title_text.get_width() // 2, cy + 180))
 
     # 操作ガイド（点滅）

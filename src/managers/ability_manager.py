@@ -43,6 +43,7 @@ class AbilityManager:
         game: Game インスタンス（bugs / constellations 等へのアクセスに使用）
         """
         self._play_sfx("ability")
+        game.activated_abilities_count += 1
 
         if const_id == 'c_the_bard':
             self.active['slow_bugs'] = 25.0

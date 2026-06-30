@@ -28,7 +28,7 @@ class BugManager:
     # ──────────────────────────────────────────
     def update(self, dt: float, ability_manager, constellations,
                constellation_placements, progress: float, moon_phi: float,
-               game):
+               game, is_lunar_eclipse: bool = False):
         """
         ability_manager: AbilityManager
         constellations:  星座リスト
@@ -38,7 +38,7 @@ class BugManager:
         game:            Game（defeated_bugs_count / repaired_consts_session_count 等）
         """
         self._update_flocking(ability_manager)
-        self._update_movement(dt, ability_manager)
+        self._update_movement(dt, ability_manager, is_lunar_eclipse)
         self._update_merging()
         self._spawn_if_needed(progress, moon_phi)
         self._check_star_collisions(dt, ability_manager, constellations,
@@ -92,9 +92,11 @@ class BugManager:
                     bug.level = 1
                     bug.size_scale = 1.0
 
-    def _update_movement(self, dt: float, ability_manager):
+    def _update_movement(self, dt: float, ability_manager, is_lunar_eclipse: bool = False):
         """各バグの位置更新"""
         bug_dt = dt * 0.6 if ability_manager.is_active('slow_bugs') else dt
+        if is_lunar_eclipse:
+            bug_dt *= 1.3
         for bug in self.bugs:
             bug.update(bug_dt)
 

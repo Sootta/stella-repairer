@@ -1,13 +1,14 @@
 import math
 
 class MoonManager:
-    def __init__(self, start_p: float, end_p: float, moon_duration: float, moon_phase: float, visible: bool):
+    def __init__(self, start_p: float, end_p: float, moon_duration: float, moon_phase: float, visible: bool, is_lunar_eclipse: bool = False):
         self.moon_time = 0.0
         self.moon_duration = moon_duration
         self.start_p = start_p
         self.end_p = end_p
         self.moon_phase = moon_phase
         self.visible = visible
+        self.is_lunar_eclipse = is_lunar_eclipse
 
         self.moon_theta = 90.0 + start_p * 180.0
         self.moon_phi = 45.0 * math.sin(start_p * math.pi)

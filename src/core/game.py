@@ -23,9 +23,12 @@ CAM_SPEED = 90.0
 class Game:
     """GAME状態におけるカメラ操作とゲーム状態の更新・描画を管理するオーケストレータークラス"""
 
-    def __init__(self, coord, base_dir, difficulty="FULL_MOON"):
+    def __init__(self, coord, base_dir: str, difficulty: str = "FULL_MOON", cycle_count: int = 0):
         self.coord = coord
         self.difficulty = difficulty
+        if difficulty == "FULL_MOON" and cycle_count == 1:
+            self.difficulty = "LUNAR_ECLIPSE"
+        self.cycle_count = cycle_count
         self.mouse_look_mode = False
 
         # ── 星座データのロードと配置 ──
@@ -40,7 +43,7 @@ class Game:
         self.message_timer = 0.0
 
         # 難易度による調整
-        params = self._build_difficulty_params(difficulty)
+        params = self._build_difficulty_params(self.difficulty)
         self.start_p          = params["start_p"]
         self.end_p            = params["end_p"]
 
@@ -50,7 +53,8 @@ class Game:
             end_p=params["end_p"],
             moon_duration=params["moon_duration"],
             moon_phase=params["moon_phase"],
-            visible=params["draw_moon_visible"]
+            visible=params["draw_moon_visible"],
+            is_lunar_eclipse=(self.difficulty == "LUNAR_ECLIPSE")
         )
 
         self.game_cleared = False
@@ -72,6 +76,7 @@ class Game:
         # ── 統計 ──
         self.defeated_bugs_count = 0
         self.repaired_consts_session_count = 0
+        self.activated_abilities_count = 0
 
         # ── 効果音のロード ──
         self.sfx = self._load_sfx(base_dir)
@@ -138,6 +143,8 @@ class Game:
         )
         overrides = {
             "NEW_MOON":       dict(moon_phase=0.0, draw_moon_visible=False,
+                                   bug_spawn_rate=2.0, orb_spawn_rate=3.0, max_energy_orbs=3),
+            "LUNAR_ECLIPSE":  dict(moon_phase=1.0, draw_moon_visible=True,
                                    bug_spawn_rate=2.0, orb_spawn_rate=3.0, max_energy_orbs=3),
             "FIRST_QUARTER":  dict(start_p=0.5, moon_duration=48.0, moon_phase=0.5,
                                    bug_spawn_rate=1.5, orb_spawn_rate=2.0, max_energy_orbs=2),
@@ -215,14 +222,16 @@ class Game:
             broken_star_ratio
         )
 
-        # 彗星の更新 (新月・上弦の半月・上弦の月で発生)
-        self.comet_manager.update(dt, progress, self.moon_manager.moon_phase)
+        # 彗星の更新 (新月・上弦の半月・上弦の月・月食で発生)
+        # 最初の新月 (cycle_count == 0 かつ difficulty == "NEW_MOON") は出現させない
+        can_spawn_comet = not (self.cycle_count == 0 and self.difficulty == "NEW_MOON")
+        self.comet_manager.update(dt, progress, self.moon_manager.moon_phase, can_spawn_comet, self.moon_manager.is_lunar_eclipse)
 
         # バグマネージャー更新（スポーン含む）
         ab = self.ability_manager
         if not getattr(self, "true_clear_view_mode", False):
             self.bug_manager._update_flocking(ab)
-            self.bug_manager._update_movement(dt, ab)
+            self.bug_manager._update_movement(dt, ab, self.moon_manager.is_lunar_eclipse)
             self.bug_manager._update_merging()
             self.bug_manager._spawn_with_dt(dt, progress, self.moon_manager.moon_phi)
             self.bug_manager._check_star_collisions(
@@ -310,7 +319,7 @@ class Game:
         # 2. 月の描画
         if self.moon_manager.visible:
             draw_moon(screen, self.coord, self.moon_manager.moon_theta, self.moon_manager.moon_phi,
-                      self.moon_manager.moon_phase, ready_state=ready)
+                      self.moon_manager.moon_phase, ready_state=ready, is_lunar_eclipse=self.moon_manager.is_lunar_eclipse)
 
         # 3. 星座の描画
         draw_constellations(screen, self.coord, self.constellations,

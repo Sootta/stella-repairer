@@ -95,7 +95,8 @@ def main():
         "STAGE_CYCLE": STAGE_CYCLE,
         "STAGE_NAMES": STAGE_NAMES,
         "STAGE_PHASES": STAGE_PHASES,
-        "current_stage_idx": current_stage_idx
+        "current_stage_idx": current_stage_idx,
+        "cycle_count": 1
     }
 
     scene_manager.switch_scene(TitleScene)

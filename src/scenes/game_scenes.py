@@ -95,7 +95,8 @@ class StageIntroScene(BaseScene):
     def start_game(self):
         stage_cycle = self.manager.shared_data["STAGE_CYCLE"]
         idx = self.manager.shared_data["current_stage_idx"]
-        self.manager.game = Game(self.manager.coord, self.manager.base_dir, stage_cycle[idx])
+        cycle_count = self.manager.shared_data.get("cycle_count", 0)
+        self.manager.game = Game(self.manager.coord, self.manager.base_dir, stage_cycle[idx], cycle_count)
         pygame.mouse.set_visible(False)
         self.manager.switch_scene(GameScene)
 
@@ -106,9 +107,16 @@ class StageIntroScene(BaseScene):
         draw_background(screen, self.manager.coord)
         idx = self.manager.shared_data["current_stage_idx"]
         stage_cycle = self.manager.shared_data["STAGE_CYCLE"]
+        cycle_count = self.manager.shared_data.get("cycle_count", 0)
+        
         diff_name = self.manager.shared_data["STAGE_NAMES"][stage_cycle[idx]]
         phase = self.manager.shared_data["STAGE_PHASES"][stage_cycle[idx]]
-        draw_stage_intro_screen(screen, self.manager.elapsed_time, diff_name, phase)
+        
+        is_lunar_eclipse = (stage_cycle[idx] == "FULL_MOON" and cycle_count == 1)
+        if is_lunar_eclipse:
+            diff_name = "レッドムーン"
+            
+        draw_stage_intro_screen(screen, self.manager.elapsed_time, diff_name, phase, is_lunar_eclipse=is_lunar_eclipse)
 
 
 class GameScene(BaseScene):
@@ -118,6 +126,7 @@ class GameScene(BaseScene):
             if event.type == pygame.KEYDOWN:
                 if getattr(game, "true_clear_view_mode", False) and event.key == pygame.K_q:
                     self.manager.shared_data["current_stage_idx"] = 0
+                    self.manager.shared_data["cycle_count"] = 0
                     pygame.mouse.set_visible(True)
                     pygame.event.set_grab(False)
                     play_bgm(self.manager, "Beneath_the_Midnight_Flow.mp3")
@@ -163,17 +172,21 @@ class ClearScene(BaseScene):
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if getattr(self.manager.game, "true_clear", False):
                         self.manager.shared_data["current_stage_idx"] = 0
+                        self.manager.shared_data["cycle_count"] = 0
                         play_bgm(self.manager, "Beneath_the_Midnight_Flow.mp3")
                         self.manager.switch_scene(TitleScene)
                     else:
                         stages = len(self.manager.shared_data["STAGE_CYCLE"])
-                        self.manager.shared_data["current_stage_idx"] = (self.manager.shared_data["current_stage_idx"] + 1) % stages
+                        next_idx = (self.manager.shared_data["current_stage_idx"] + 1) % stages
+                        if next_idx == 0:
+                            self.manager.shared_data["cycle_count"] = self.manager.shared_data.get("cycle_count", 0) + 1
+                        self.manager.shared_data["current_stage_idx"] = next_idx
                         self.manager.switch_scene(StageIntroScene)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if getattr(self.manager.game, "true_clear", False):
                     sw, sh = SCREEN_W, SCREEN_H
                     panel_w, panel_h = 700, 450
-                    btn_rect = pygame.Rect(sw // 2 - panel_w // 2 + panel_w // 2 - 100, sh // 2 - panel_h // 2 + 250, 200, 40)
+                    btn_rect = pygame.Rect(sw // 2 - panel_w // 2 + panel_w // 2 - 100, sh // 2 - panel_h // 2 + 310, 200, 40)
                     if btn_rect.collidepoint(event.pos):
                         self.manager.game.enter_view_mode()
                         self.manager.game.game_cleared = False
@@ -195,6 +208,7 @@ class GameOverScene(BaseScene):
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
                     self.manager.shared_data["current_stage_idx"] = 0
+                    self.manager.shared_data["cycle_count"] = 0
                     play_bgm(self.manager, "Beneath_the_Midnight_Flow.mp3")
                     self.manager.switch_scene(TitleScene)
 
