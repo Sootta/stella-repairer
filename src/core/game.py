@@ -3,12 +3,14 @@ import math
 import os
 import random
 
-from src.ui.renderer import draw_background, draw_constellations, draw_moon
+from src.ui.renderer import draw_background, draw_constellations, draw_moon, draw_comet
 from src.core.constellation_loader import ConstellationLoader
 from src.entities.bug import Bug
 from src.managers.bug_manager import BugManager
 from src.managers.orb_manager import OrbManager
 from src.managers.ability_manager import AbilityManager
+from src.managers.comet_manager import CometManager
+from src.managers.moon_manager import MoonManager
 from src.ui.game_ui import GameUI
 
 # ──────────────────────────────────────────
@@ -37,24 +39,29 @@ class Game:
         self.selected_constellation = None
         self.message_timer = 0.0
 
-        # ── 難易度パラメータ ──
+        # 難易度による調整
         params = self._build_difficulty_params(difficulty)
-        self.bug_spawn_rate   = params["bug_spawn_rate"]
-        self.orb_spawn_rate   = params["orb_spawn_rate"]
-        self.max_energy_orbs  = params["max_energy_orbs"]
-        self.MOON_DURATION    = params["moon_duration"]
-        self.moon_phase       = params["moon_phase"]
-        self.draw_moon_visible = params["draw_moon_visible"]
         self.start_p          = params["start_p"]
         self.end_p            = params["end_p"]
 
         # ── 月の初期位置 ──
-        base_p = self.start_p
-        self.moon_time  = 0.0
-        self.moon_theta = 90.0 + base_p * 180.0
-        self.moon_phi   = 45.0 * math.sin(base_p * math.pi)
+        self.moon_manager = MoonManager(
+            start_p=params["start_p"],
+            end_p=params["end_p"],
+            moon_duration=params["moon_duration"],
+            moon_phase=params["moon_phase"],
+            visible=params["draw_moon_visible"]
+        )
+
         self.game_cleared = False
         self.game_over    = False
+        self.true_clear   = False
+
+        # ── 彗星 ──
+        self.comet_manager = CometManager()
+        
+        # ── 星空観賞モード ──
+        self.true_clear_view_mode = False
 
         # ── エネルギー ──
         self.possessed_energy = 0
@@ -67,12 +74,13 @@ class Game:
         self.repaired_consts_session_count = 0
 
         # ── 効果音のロード ──
-        sfx = self._load_sfx(base_dir)
+        self.sfx = self._load_sfx(base_dir)
+        sfx = self.sfx
 
         # ── 各マネージャーの初期化 ──
         self.ability_manager = AbilityManager(sfx)
-        self.bug_manager     = BugManager(coord, self.bug_spawn_rate, sfx)
-        self.orb_manager     = OrbManager(self.max_energy_orbs, self.orb_spawn_rate, sfx)
+        self.bug_manager     = BugManager(coord, params["bug_spawn_rate"], sfx)
+        self.orb_manager     = OrbManager(params["max_energy_orbs"], params["orb_spawn_rate"], sfx)
         self.ui              = GameUI()
 
     # ══════════════════════════════════════════
@@ -125,19 +133,19 @@ class Game:
     def _build_difficulty_params(difficulty: str) -> dict:
         defaults = dict(
             bug_spawn_rate=0.7, orb_spawn_rate=1.0, max_energy_orbs=1,
-            moon_duration=120.0, moon_phase=1.0, draw_moon_visible=True,
+            moon_duration=96.0, moon_phase=1.0, draw_moon_visible=True,
             start_p=0.0, end_p=1.0,
         )
         overrides = {
             "NEW_MOON":       dict(moon_phase=0.0, draw_moon_visible=False,
                                    bug_spawn_rate=2.0, orb_spawn_rate=3.0, max_energy_orbs=3),
-            "FIRST_QUARTER":  dict(start_p=0.5, moon_duration=60.0, moon_phase=0.5,
+            "FIRST_QUARTER":  dict(start_p=0.5, moon_duration=48.0, moon_phase=0.5,
                                    bug_spawn_rate=1.5, orb_spawn_rate=2.0, max_energy_orbs=2),
-            "WAXING_GIBBOUS": dict(start_p=0.25, moon_duration=90.0, moon_phase=0.75,
+            "WAXING_GIBBOUS": dict(start_p=0.25, moon_duration=72.0, moon_phase=0.75,
                                    bug_spawn_rate=1.0, orb_spawn_rate=1.0, max_energy_orbs=1),
-            "FULL_MOON":      dict(moon_phase=1.0, bug_spawn_rate=0.7),
-            "WANING_GIBBOUS": dict(end_p=0.75, moon_duration=90.0, moon_phase=-0.75),
-            "LAST_QUARTER":   dict(end_p=0.5, moon_duration=60.0, moon_phase=-0.5,
+            "FULL_MOON":      dict(moon_phase=1.0, bug_spawn_rate=0.35),
+            "WANING_GIBBOUS": dict(end_p=0.75, moon_duration=72.0, moon_phase=-0.75),
+            "LAST_QUARTER":   dict(end_p=0.5, moon_duration=48.0, moon_phase=-0.5,
                                    bug_spawn_rate=1.5, orb_spawn_rate=2.0, max_energy_orbs=2),
         }
         params = {**defaults, **overrides.get(difficulty, {})}
@@ -151,8 +159,9 @@ class Game:
             "bug_kill":    "A_bursting_sound_nea_#1-1782568383801.mp3",
             "orb_collect": "Sparkly_sound_effect_#3-1782568707614.mp3",
             "ability":     "A_sparkling_sound_ef_#2-1782569003434.mp3",
+            "comet_click": "true_clear.mp3",
         }
-        volumes = {"bug_kill": 1.0, "orb_collect": 0.4, "ability": 0.4}
+        volumes = {"bug_kill": 1.0, "orb_collect": 0.4, "ability": 0.4, "comet_click": 0.8}
         result = {}
         for key, fname in sfx_files.items():
             path = os.path.join(base_dir, "source", fname)
@@ -168,6 +177,16 @@ class Game:
                 print(f"Warning: SFX file not found: {path}")
                 result[key] = None
         return result
+
+    def enter_view_mode(self):
+        """星空観賞モードへ移行し、全状態を正常にリセットする"""
+        self.true_clear_view_mode = True
+        self.bug_manager.bugs.clear()
+        self.orb_manager.orbs.clear()
+        for const in self.constellations:
+            const.is_broken = False
+            for star in const.stars:
+                star.is_broken = False
 
     # ══════════════════════════════════════════
     # 更新
@@ -189,19 +208,29 @@ class Game:
         self._update_camera(dt, keys)
 
         # 月進捗
-        progress = min(1.0, self.moon_time / self.MOON_DURATION)
+        broken_star_ratio = 0.0 # Placeholder logic for broken star count ratio
+        progress = self.moon_manager.update(
+            dt, 
+            getattr(self, "true_clear_view_mode", False), 
+            broken_star_ratio
+        )
+
+        # 彗星の更新 (新月・上弦の半月・上弦の月で発生)
+        self.comet_manager.update(dt, progress, self.moon_manager.moon_phase)
 
         # バグマネージャー更新（スポーン含む）
         ab = self.ability_manager
-        self.bug_manager._update_flocking(ab)
-        self.bug_manager._update_movement(dt, ab)
-        self.bug_manager._update_merging()
-        self.bug_manager._spawn_with_dt(dt, progress, self.moon_phi)
-        self.bug_manager._check_star_collisions(
-            dt, ab, self.constellations, self.constellation_placements, self)
+        if not getattr(self, "true_clear_view_mode", False):
+            self.bug_manager._update_flocking(ab)
+            self.bug_manager._update_movement(dt, ab)
+            self.bug_manager._update_merging()
+            self.bug_manager._spawn_with_dt(dt, progress, self.moon_manager.moon_phi)
+            self.bug_manager._check_star_collisions(
+                dt, ab, self.constellations, self.constellation_placements, self)
 
         # エネルギー玉更新
-        self.orb_manager.update(dt)
+        if not getattr(self, "true_clear_view_mode", False):
+            self.orb_manager.update(dt)
 
         # 各星座の連続繋がり時間更新
         for const in self.constellations:
@@ -256,27 +285,16 @@ class Game:
         if self.game_cleared or self.game_over:
             return
 
-        total_stars = sum(len(c.stars) for c in self.constellations)
-        broken_stars = sum(sum(1 for s in c.stars if s.is_broken) for c in self.constellations)
-        broken_star_ratio = broken_stars / total_stars if total_stars > 0 else 0.0
-
-        moon_speed_multiplier = max(0.0, 1.0 - broken_star_ratio)
-        self.moon_time += dt * moon_speed_multiplier
-
-        progress = min(1.0, self.moon_time / self.MOON_DURATION)
-        base_progress = self.start_p + progress * (self.end_p - self.start_p)
-        self.moon_theta = 90.0 + base_progress * 180.0
-        self.moon_phi   = 45.0 * math.sin(base_progress * math.pi)
-
         if progress >= 1.0:
             self.game_cleared = True
             print("ゲームクリア！月が西に沈みました。")
 
         total_consts = len(self.constellations)
         broken_consts = sum(1 for c in self.constellations if any(s.is_broken for s in c.stars))
-        if total_consts > 0 and broken_consts * 3 >= total_consts * 2:
+        unbroken_consts = total_consts - broken_consts
+        if total_consts > 0 and unbroken_consts <= 3:
             self.game_over = True
-            print(f"ゲームオーバー！星座の2/3以上({broken_consts}/{total_consts})が壊れました。")
+            print(f"ゲームオーバー！残りの正常な星座が{unbroken_consts}個以下になりました。")
 
     # ══════════════════════════════════════════
     # 描画
@@ -289,10 +307,10 @@ class Game:
         # 1. 星空の描画
         draw_background(screen, self.coord, ready_state=ready, difficulty=self.difficulty)
 
-        # 2. 月の描画 (背景と星座の間)
-        if self.draw_moon_visible:
-            draw_moon(screen, self.coord, self.moon_theta, self.moon_phi,
-                      self.moon_phase, ready_state=ready)
+        # 2. 月の描画
+        if self.moon_manager.visible:
+            draw_moon(screen, self.coord, self.moon_manager.moon_theta, self.moon_manager.moon_phi,
+                      self.moon_manager.moon_phase, ready_state=ready)
 
         # 3. 星座の描画
         draw_constellations(screen, self.coord, self.constellations,
@@ -305,6 +323,9 @@ class Game:
 
         # 5. バグの描画
         self.bug_manager.draw(screen, self.coord)
+
+        # 5.5 彗星の描画
+        self.comet_manager.draw(screen, self.coord, self.ability_manager)
 
         # 6. HUD / UIの描画
         self.ui.draw_all(screen, self)
@@ -324,6 +345,14 @@ class Game:
         is_zoomed_in = self.coord.current_fov < 50.0
         mx, my = mouse_pos
         clicked_any = False
+
+        # 彗星のクリック判定
+        if self.comet_manager.handle_click(mx, my, self.coord, self.ability_manager):
+            if self.sfx.get("comet_click"):
+                self.sfx["comet_click"].play()
+            self.game_cleared = True
+            self.true_clear = True
+            return True
 
         # 0. 準備状態の星座クリック判定（アビリティ発動）
         if self.ability_manager.energy_ready_state:

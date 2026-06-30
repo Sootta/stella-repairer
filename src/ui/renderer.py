@@ -59,11 +59,13 @@ def generate_stars(count=200):
 # 初期の背景の星を生成
 STARS = generate_stars(300)
 
-def draw_background(screen, coord, ready_state=False, difficulty="FULL_MOON"):
+def draw_background(screen, coord, ready_state=False, difficulty="FULL_MOON", view_mode=False):
     if ready_state:
         screen.fill((1, 2, 4)) # 夜空の背景色を極めて暗く
-    elif difficulty == "NEW_MOON":
+    elif difficulty == "NEW_MOON" and not view_mode:
         screen.fill((2, 3, 6)) # 新月（EXPERT）用の極限の闇夜
+    elif view_mode:
+        screen.fill((20, 30, 50)) # 鑑賞モード用の少し明るい綺麗な紺色
     else:
         screen.fill((5, 10, 20)) # 夜空の背景色
 
@@ -111,6 +113,8 @@ def draw_background(screen, coord, ready_state=False, difficulty="FULL_MOON"):
     # ── 星の描画 ──
     if ready_state:
         star_color = (40, 50, 60)
+    elif view_mode:
+        star_color = (255, 225, 100) # 鑑賞モード用のゴールドの星
     elif difficulty == "NEW_MOON":
         star_color = (130, 145, 175) # 新月用の少し明度を落とした星々
     else:
@@ -261,6 +265,84 @@ def draw_constellations(screen, coord, constellations, placements, ready_state=F
             name_text = font.render(const.name, True, text_color)
             screen.blit(name_text, (int(cx_s) - name_text.get_width() // 2, int(cy_s) - 25))
 
+def draw_multiline_text(screen, text, font, color, rect, line_spacing=5):
+    """指定された矩形領域内にテキストを自動折り返しして描画する"""
+    lines = text.split('\n')
+    rendered_lines = []
+    
+    for line in lines:
+        if not line:
+            rendered_lines.append("")
+            continue
+        
+        current_line = ""
+        for char in line:
+            test_line = current_line + char
+            width, _ = font.size(test_line)
+            if width > rect.width:
+                rendered_lines.append(current_line)
+                current_line = char
+            else:
+                current_line = test_line
+        if current_line:
+            rendered_lines.append(current_line)
+            
+    y = rect.y
+    for line in rendered_lines:
+        if line:
+            text_surf = font.render(line, True, color)
+            screen.blit(text_surf, (rect.x, y))
+        y += font.get_height() + line_spacing
+
+def draw_letter_notice(screen, elapsed_time):
+    screen.fill((10, 10, 15))
+    font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 36)
+    if not font:
+        font = pygame.font.SysFont(None, 40)
+    
+    text = "あなたに一通の手紙が届きました"
+    alpha = int(abs(math.sin(elapsed_time * 2.0)) * 255)
+    surf = font.render(text, True, (255, 255, 255))
+    surf.set_alpha(alpha)
+    screen.blit(surf, (SCREEN_W // 2 - surf.get_width() // 2, SCREEN_H // 2 - surf.get_height() // 2))
+
+    font_sub = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 20)
+    if not font_sub:
+        font_sub = pygame.font.SysFont(None, 24)
+    click_surf = font_sub.render("[ CLICK TO OPEN ]", True, (150, 150, 150))
+    screen.blit(click_surf, (SCREEN_W // 2 - click_surf.get_width() // 2, SCREEN_H // 2 + 60))
+
+def draw_letter_image(screen, letter_image, elapsed_time, show_text=False, letter_text=""):
+    img_w, img_h = letter_image.get_size()
+    scale = min(SCREEN_W / img_w, SCREEN_H / img_h)
+    new_w, new_h = int(img_w * scale), int(img_h * scale)
+    scaled_img = pygame.transform.smoothscale(letter_image, (new_w, new_h))
+    
+    x = (SCREEN_W - new_w) // 2
+    y = (SCREEN_H - new_h) // 2
+    screen.fill((0, 0, 0))
+    screen.blit(scaled_img, (x, y))
+    
+    if show_text:
+        overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+        
+        font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 24)
+        if not font:
+            font = pygame.font.SysFont(None, 28)
+            
+        rect = pygame.Rect(SCREEN_W * 0.15, SCREEN_H * 0.15, SCREEN_W * 0.7, SCREEN_H * 0.7)
+        draw_multiline_text(screen, letter_text, font, (240, 240, 240), rect, line_spacing=12)
+        
+        font_sub = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 20)
+        if not font_sub:
+            font_sub = pygame.font.SysFont(None, 24)
+        click_surf = font_sub.render("[ CLICK TO CONTINUE ]", True, (200, 200, 200))
+        alpha = int(abs(math.sin(elapsed_time * 2.0)) * 255)
+        click_surf.set_alpha(alpha)
+        screen.blit(click_surf, (SCREEN_W // 2 - click_surf.get_width() // 2, SCREEN_H - 80))
+
 def draw_title_screen(screen, elapsed_time):
     # タイトルロゴの描画
     font_large = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 64, bold=True)
@@ -295,8 +377,8 @@ def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
     if not visible:
         return
         
-    # ズーム倍率
-    zoom_ratio = 90.0 / coord.current_fov
+    # ズーム倍率 (サイズを2倍にするため * 2.0)
+    zoom_ratio = (90.0 / coord.current_fov) * 2.0
     r = int(24 * zoom_ratio)  # 月のコア半径
     
     # 半透明の月光グロー効果
@@ -368,6 +450,38 @@ def draw_moon(screen, coord, theta, phi, phase, ready_state=False):
         pygame.draw.circle(surf, (245, 235, 195) if not ready_state else (60, 56, 48), (r - int(4 * zoom_ratio), r - int(4 * zoom_ratio)), int(4 * zoom_ratio))
         screen.blit(surf, (int(sx) - r, int(sy) - r))
         pygame.draw.arc(screen, (40, 50, 70), (int(sx) - r, int(sy) - r, r * 2, r * 2), -math.pi/2, math.pi/2, 1)
+
+def draw_comet(screen, cx, cy, angle, elapsed_time, is_faint=False):
+    """彗星と尾の描画"""
+    import random
+    
+    alpha_mult = 0.15 if is_faint else 1.0
+    
+    r = 10
+    core_color = (200, 240, 255, int(255 * alpha_mult))
+    if is_faint:
+        surf = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+        pygame.draw.circle(surf, core_color, (r, r), r)
+        screen.blit(surf, (int(cx) - r, int(cy) - r))
+    else:
+        pygame.draw.circle(screen, (core_color[0], core_color[1], core_color[2]), (int(cx), int(cy)), r)
+    
+    glow_surf = pygame.Surface((r * 6, r * 6), pygame.SRCALPHA)
+    pygame.draw.circle(glow_surf, (150, 220, 255, int(60 * alpha_mult)), (r * 3, r * 3), r * 3)
+    pygame.draw.circle(glow_surf, (200, 240, 255, int(120 * alpha_mult)), (r * 3, r * 3), r * 2)
+    screen.blit(glow_surf, (int(cx) - r * 3, int(cy) - r * 3))
+    
+    tail_length = 150
+    tail_base_angle = angle + math.pi
+    
+    for i in range(20):
+        offset_ang = tail_base_angle + random.uniform(-0.15, 0.15)
+        length = random.uniform(20, tail_length)
+        tx = cx + length * math.cos(offset_ang)
+        ty = cy + length * math.sin(offset_ang)
+        
+        alpha = int(255 * (1.0 - length / tail_length) * alpha_mult)
+        pygame.draw.line(screen, (150, 220, 255, alpha), (cx, cy), (tx, ty), max(1, int(4 * (1.0 - length / tail_length))))
 def draw_clear_screen(screen, game):
     """ゲームクリア画面の描画"""
     sw = screen.get_width()
@@ -398,31 +512,48 @@ def draw_clear_screen(screen, game):
         font_small = pygame.font.SysFont(None, 22)
         
     # テキストレンダリング
-    title_text = font_large.render("GAME CLEAR", True, (255, 225, 100))
-    
     total_count = len(game.constellations)
     repaired_count = sum(1 for const in game.constellations if not any(star.is_broken for star in const.stars))
     
-    desc_text1 = font_medium.render("月は西の地平線へと沈み、静寂が訪れました。", True, (220, 235, 255))
+    if getattr(game, "true_clear", False):
+        title_text = font_large.render("TRUE CLEAR", True, (255, 255, 255))
+        desc_text1 = font_medium.render("彗星がトリガーとなり、夜空のバグが生まれない星空へと再構成されました", True, (220, 235, 255))
+        guidance_text = font_small.render("[ PRESS ENTER TO RETURN TO TITLE ]", True, (255, 255, 255))
+        
+        # 星空を見るボタン
+        btn_rect = pygame.Rect(panel_w // 2 - 100, 250, 200, 40)
+        btn_color = (60, 100, 150)
+        mx, my = pygame.mouse.get_pos()
+        btn_rect_global = pygame.Rect(sw // 2 - panel_w // 2 + btn_rect.x, sh // 2 - panel_h // 2 + btn_rect.y, btn_rect.width, btn_rect.height)
+        if btn_rect_global.collidepoint(mx, my):
+            btn_color = (80, 130, 190)
+        pygame.draw.rect(panel, btn_color, btn_rect, border_radius=5)
+        pygame.draw.rect(panel, (200, 220, 255), btn_rect, 2, border_radius=5)
+        btn_text = font_medium.render("星空を見る", True, (255, 255, 255))
+        panel.blit(btn_text, (btn_rect.x + btn_rect.width // 2 - btn_text.get_width() // 2, btn_rect.y + btn_rect.height // 2 - btn_text.get_height() // 2))
+    else:
+        title_text = font_large.render("STAGE CLEAR", True, (255, 225, 100))
+        desc_text1 = font_medium.render("月は西の地平線へと沈み、静寂が訪れました。", True, (220, 235, 255))
+        guidance_text = font_small.render("[ PRESS ENTER TO CONTINUE TO NEXT STAGE ]", True, (255, 255, 255))
+        
     stat_text1 = font_medium.render(f"最後に残った星座の数: {repaired_count} / {total_count}", True, (235, 180, 60))
     stat_text2 = font_medium.render(f"星座を修正した回数: {game.repaired_consts_session_count} 回", True, (235, 180, 60))
     stat_text3 = font_medium.render(f"バグを消した個数: {game.defeated_bugs_count} 個", True, (235, 180, 60))
-    
+        
     # ブレス効果によるEnter案内
     import time
     pulse = (math.sin(time.time() * 3.0) + 1.0) / 2.0
     alpha = int(100 + pulse * 155)
-    
-    guidance_text = font_small.render("[ PRESS ENTER TO RETURN TO TITLE ]", True, (255, 255, 255))
     guidance_surf = guidance_text.copy()
     guidance_surf.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
     
     # パネルに配置
     panel.blit(title_text, (panel_w // 2 - title_text.get_width() // 2, 50))
     panel.blit(desc_text1, (panel_w // 2 - desc_text1.get_width() // 2, 130))
-    panel.blit(stat_text1, (panel_w // 2 - stat_text1.get_width() // 2, 190))
-    panel.blit(stat_text2, (panel_w // 2 - stat_text2.get_width() // 2, 240))
-    panel.blit(stat_text3, (panel_w // 2 - stat_text3.get_width() // 2, 290))
+    if not getattr(game, "true_clear", False):
+        panel.blit(stat_text1, (panel_w // 2 - stat_text1.get_width() // 2, 190))
+        panel.blit(stat_text2, (panel_w // 2 - stat_text2.get_width() // 2, 240))
+        panel.blit(stat_text3, (panel_w // 2 - stat_text3.get_width() // 2, 290))
     panel.blit(guidance_surf, (panel_w // 2 - guidance_surf.get_width() // 2, 380))
     
     # 画面中央に blit
@@ -563,175 +694,32 @@ def draw_moon_icon(screen, cx, cy, r, phase, is_selected):
     if is_selected:
         pygame.draw.circle(screen, (255, 220, 100), (cx, cy), r + 2, 2)
 
-def draw_difficulty_screen(screen, elapsed_time, selected_idx, show_ability_list=False):
-    """難易度選択画面の描画"""
+def draw_stage_intro_screen(screen, elapsed_time, difficulty_name, phase):
+    """ステージ開始前の月齢表示画面を描画"""
     sw = screen.get_width()
     sh = screen.get_height()
     
-    # 1. タイトル用フォントとテキスト用フォントの読み込み
-    font_large = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 48, bold=True)
+    font_large = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 64, bold=True)
     if not font_large:
-        font_large = pygame.font.SysFont(None, 54, bold=True)
-    font_medium = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 28, bold=True)
-    if not font_medium:
-        font_medium = pygame.font.SysFont(None, 32, bold=True)
-    font_desc = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 20)
-    if not font_desc:
-        font_desc = pygame.font.SysFont(None, 24)
-    font_small = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 18)
+        font_large = pygame.font.SysFont(None, 70, bold=True)
+    font_small = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 24)
     if not font_small:
-        font_small = pygame.font.SysFont(None, 22)
+        font_small = pygame.font.SysFont(None, 28)
 
-    # 2. タイトルの描画
-    title_text = font_large.render("SELECT DIFFICULTY", True, (255, 255, 255))
-    screen.blit(title_text, (sw // 2 - title_text.get_width() // 2, 80))
-
-    # 3. 円環状の軌道を描く
-    cx, cy = sw // 2, sh // 2 - 20
-    orbit_r = 180
-    pygame.draw.circle(screen, (30, 45, 75), (cx, cy), orbit_r, 1)
-
-    # 難易度（月の状態）の定義
-    difficulties = [
-        {"name": "新月 - EXPERT", "phase": 0.0, "angle": 270, "desc": "漆黒の闇夜。バグが最凶化し、極めて過酷な修復作業となります。"},
-        {"name": "上弦の月 - HARD", "phase": 0.5, "angle": 330, "desc": "満ちゆく半月。バグが活性化し、星の崩壊速度が速くなります。"},
-        {"name": "十三夜月 - NORMAL", "phase": 0.75, "angle": 30, "desc": "満月手前の月。標準的なバグの出現頻度とゲームバランス。"},
-        {"name": "満月 - EASY", "phase": 1.0, "angle": 90, "desc": "満ちる月光。バグの出現が控えめで、初心者向けの難易度。"},
-        {"name": "凸月 - NORMAL", "phase": -0.75, "angle": 150, "desc": "欠け始めの月。標準的なバグの出現頻度とゲームバランス。"},
-        {"name": "下弦の月 - HARD", "phase": -0.5, "angle": 210, "desc": "欠けゆく半月。バグが活性化し、星の崩壊速度が速くなります。"}
-    ]
-
-    # 4. 円環上に各月を描画
-    for idx, diff in enumerate(difficulties):
-        rad = math.radians(diff["angle"])
-        mx = cx + int(orbit_r * math.cos(rad))
-        my = cy + int(orbit_r * math.sin(rad))
-        
-        is_selected = (idx == selected_idx)
-        r_size = 40 if is_selected else 30
-        
-        draw_moon_icon(screen, mx, my, r_size, diff["phase"], is_selected)
-        
-        # 難易度名のラベルを各月の外側に配置
-        label_color = (255, 235, 150) if is_selected else (140, 160, 190)
-        offset_dist = 65 if is_selected else 55
-        lx = cx + int((orbit_r + offset_dist) * math.cos(rad))
-        ly = cy + int((orbit_r + offset_dist) * math.sin(rad))
-        
-        label_text = font_small.render(diff["name"].split(" - ")[0], True, label_color)
-        screen.blit(label_text, (lx - label_text.get_width() // 2, ly - label_text.get_height() // 2))
-
-    # 5. 中央に選択中の難易度の詳細説明を描画
-    selected_diff = difficulties[selected_idx]
+    cx, cy = sw // 2, sh // 2 - 40
     
-    # 難易度タイトル
-    diff_title = font_medium.render(selected_diff["name"], True, (255, 225, 100))
-    screen.blit(diff_title, (sw // 2 - diff_title.get_width() // 2, cy - 35))
+    # 大きな月を描画
+    draw_moon_icon(screen, cx, cy, 150, phase, False)
     
-    # 難易度説明
-    desc_str = selected_diff["desc"]
-    desc_text = font_desc.render(desc_str, True, (200, 220, 255))
-    screen.blit(desc_text, (sw // 2 - desc_text.get_width() // 2, cy + 15))
+    # 月齢の名前を描画
+    title_text = font_large.render(difficulty_name, True, (255, 235, 150))
+    screen.blit(title_text, (cx - title_text.get_width() // 2, cy + 180))
 
-    # 6. 操作ガイド
+    # 操作ガイド（点滅）
     pulse = (math.sin(elapsed_time * 3.0) + 1.0) / 2.0
     alpha = int(100 + pulse * 155)
     
-    guide_text = font_small.render("[ LEFT / RIGHT: SELECT  |  ENTER: DECIDE ]", True, (255, 255, 255))
+    guide_text = font_small.render("[ CLICK OR PRESS ENTER TO START ]", True, (255, 255, 255))
     guide_surf = guide_text.copy()
     guide_surf.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
-    screen.blit(guide_surf, (sw // 2 - guide_surf.get_width() // 2, sh - 100))
-
-    # 7. 「星座能力一覧」ボタンの描画 (右上)
-    btn_x = sw - 190
-    btn_y = 30
-    btn_w = 160
-    btn_h = 36
-    
-    # ボタンの背景と枠線を描く
-    btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
-    btn_surf.fill((10, 25, 50, 200)) # 半透明ダークブルー
-    pygame.draw.rect(btn_surf, (215, 170, 70), (0, 0, btn_w, btn_h), 1) # ゴールド枠
-    pygame.draw.rect(btn_surf, (100, 80, 30), (2, 2, btn_w - 4, btn_h - 4), 1)
-    
-    # テキストを描画
-    font_btn = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 14, bold=True)
-    if not font_btn:
-        font_btn = pygame.font.SysFont(None, 15, bold=True)
-    btn_text = font_btn.render("星座の能力一覧 [H]", True, (235, 195, 100))
-    btn_surf.blit(btn_text, (btn_w // 2 - btn_text.get_width() // 2, btn_h // 2 - btn_text.get_height() // 2))
-    screen.blit(btn_surf, (btn_x, btn_y))
-
-    # 8. 「星座アビリティ一覧」ポップアップパネルの描画
-    if show_ability_list:
-        panel_w = 780
-        panel_h = 510
-        px = sw // 2 - panel_w // 2
-        py = sh // 2 - panel_h // 2
-        
-        # 半透明の背景パネル
-        overlay = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        overlay.fill((8, 16, 32, 245))
-        pygame.draw.rect(overlay, (215, 170, 70), (0, 0, panel_w, panel_h), 2)
-        pygame.draw.rect(overlay, (100, 80, 30), (3, 3, panel_w - 6, panel_h - 6), 1)
-        
-        # タイトル描画
-        title_font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 24, bold=True)
-        if not title_font:
-            title_font = pygame.font.SysFont(None, 26, bold=True)
-        title_surf = title_font.render("星座のアビリティ（特殊能力）一覧", True, (255, 220, 100))
-        overlay.blit(title_surf, (panel_w // 2 - title_surf.get_width() // 2, 20))
-        
-        # 13個の星座アビリティの一覧データ
-        abilities = [
-            ("吟遊詩人座", "安らぎの旋律", "バグの移動速度を25秒間40%低下させます。"),
-            ("狐座", "疾出のステップ", "カメラの移動速度が25秒間1.6倍になります。"),
-            ("鍵座", "知理の瞳", "25秒間、画面外のバグの方向と距離を警告表示します。"),
-            ("珈琲座", "アロマの癒やし", "ランダムに13個の崩れた星を瞬時に修復します。"),
-            ("糸紡ぎ座", "守護の結", "25秒間、すべての星をバグの破壊から完全保護します。"),
-            ("灯台守座", "導きの光", "現在の視野内にいるすべてのバグを一掃します。"),
-            ("万年筆座", "天空の一筆", "ランダムに壊れている星座1つを完全修復します。"),
-            ("双子火山座", "スターバースト", "現在出現しているすべてのバグを一掃します。"),
-            ("こだま座", "音響ノックバック", "すべてのバグを地平線まで強制的に押し戻します。"),
-            ("折れた剣座", "衝撃の刃", "25秒間、バグ撃破時に周囲のバグも巻き込んで殲滅します。"),
-            ("蝶座", "導きの羽ばたき", "25秒間、漂流している星を自動で元の位置に引き寄せます。"),
-            ("鯨座", "宿まり of 重力", "出現しているすべてのブラックホールを通常バグに戻します。"),
-            ("ドラゴン座", "天壁 of 盾", "星の破壊を最大3回まで完全に防ぐバリアを展開します。")
-        ]
-        
-        # フォント定義
-        const_font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 15, bold=True)
-        if not const_font:
-            const_font = pygame.font.SysFont(None, 16, bold=True)
-        desc_font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 13)
-        if not desc_font:
-            desc_font = pygame.font.SysFont(None, 14)
-            
-        # 左右の列に分けて描画 (左に7つ、右に6つ)
-        for i, (name, skill, desc) in enumerate(abilities):
-            # 列判定と座標計算
-            is_right_col = (i >= 7)
-            col_x = 410 if is_right_col else 30
-            row_idx = (i - 7) if is_right_col else i
-            item_y = 75 + row_idx * 55
-            
-            # 星座名とアビリティ名
-            display_skill = skill
-            if "of" in display_skill:
-                display_skill = display_skill.replace("of", "の")
-            header_text = f"{name} : {display_skill}"
-            header_surf = const_font.render(header_text, True, (235, 195, 100))
-            overlay.blit(header_surf, (col_x, item_y))
-            
-            # 効果説明
-            desc_surf = desc_font.render(desc, True, (190, 210, 235))
-            overlay.blit(desc_surf, (col_x + 16, item_y + 22))
-            
-        # 下部操作ガイド
-        close_font = pygame.font.SysFont("notosanscjkjp,applecsgothic,hiraginosansgb,msgothic", 14)
-        if not close_font:
-            close_font = pygame.font.SysFont(None, 15)
-        close_text = close_font.render("[ 画面をクリックするか、ESC または H キーで閉じる ]", True, (150, 170, 200))
-        overlay.blit(close_text, (panel_w // 2 - close_text.get_width() // 2, panel_h - 30))
-        
-        screen.blit(overlay, (px, py))
+    screen.blit(guide_surf, (cx - guide_surf.get_width() // 2, sh - 80))
